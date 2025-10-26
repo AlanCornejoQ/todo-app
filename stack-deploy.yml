@@ -1,0 +1,66 @@
+version: "3.9"
+services:
+  frontend:
+    image: alan/todo-frontend:v1.0.0
+    ports: ["80:80"]
+    networks: [app-net]
+    deploy:
+      replicas: 2
+      restart_policy: {condition: on-failure}
+
+  api:
+    image: alan/todo-api:v1.0.0
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    secrets: [db_password]
+    configs:
+      - source: app_env
+        target: /etc/app_env
+    networks: [app-net]
+    deploy:
+      replicas: 2
+      restart_policy: {condition: on-failure}
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    networks: [app-net]
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+
+  redis:
+    image: redis:7-alpine
+    networks: [app-net]
+
+  adminer:
+    image: adminer:latest
+    ports: ["8081:8080"]
+    networks: [app-net]
+
+secrets:
+  db_password:
+    external: true
+
+configs:
+  app_env:
+    external: true
+
+networks:
+  app-net:
+    driver: overlay
+
+volumes:
+  dbdata:

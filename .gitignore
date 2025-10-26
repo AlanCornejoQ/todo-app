@@ -1,0 +1,69 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
+env.bak/
+.venv/
+*.egg-info/
+*.egg
+dist/
+build/
+
+# === Logs & runtime ===
+*.log
+*.pid
+*.seed
+*.out
+*.err
+*.sqlite3
+
+# === Docker ===
+# Evita archivos de volumen o datos locales
+**/dbdata/
+**/volumes/
+**/tmp/
+.dockerignore
+docker-compose.override.yml
+
+# === Kubernetes & Cluster cache ===
+.kube/
+*.kubeconfig
+*.tmp
+*.bak
+
+# === VSCode / IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*.iml
+
+# === OS files ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === PDF y documentos auxiliares ===
+# (dejá README.pdf porque es parte de la entrega)
+!README.pdf
+*.pdf
+!README.pdf
+
+# === Comprimidos / backups ===
+*.zip
+*.tar
+*.tar.gz
+*.bak
+*.old
+
+# === Otros ===
+# Cualquier archivo temporal de ejecución
+*.env
+.env.*
+!.env.example
