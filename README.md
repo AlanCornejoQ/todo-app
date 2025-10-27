@@ -207,7 +207,7 @@ Image: alancor/todo-frontend:v1.1.0
 | Listar pods y servicios | `kubectl -n todo get pods,svc,deploy -o wide` | Todos los pods *Running* en clúster KIND |
 | API funcional | `curl http://localhost:30080/api/tasks` | Devuelve JSON con las tareas registradas |
 | Frontend actualizado | `http://localhost:30080` | Interfaz visible con título **“To-Do v1.1.0”** |
-| Verificar imágenes desplegadas | `kubectl -n todo describe deploy api | grep -i Image` y `kubectl -n todo describe deploy frontend | grep -i Image` | Muestran `alancor/todo-api:v1.1.0` y `alancor/todo-frontend:v1.1.0` |
+| Verificar imágenes desplegadas | `kubectl -n todo describe deploy api \| grep -i Image` y `kubectl -n todo describe deploy frontend \| grep -i Image` | Muestran `alancor/todo-api:v1.1.0` y `alancor/todo-frontend:v1.1.0` |
 | Swarm status | `docker stack services todoapp` | Servicios replicados y en estado *Running* (`alancor/*:v1.1.0`) |
 
 > Las pruebas confirman el funcionamiento completo de la aplicación en los tres entornos: **Compose**, **Swarm** y **Kubernetes (KIND)**.  
