@@ -3,13 +3,80 @@
 [![Docker Hub - Frontend](https://img.shields.io/badge/DockerHub-Frontend-success?logo=docker)](https://hub.docker.com/r/alancor/todo-frontend)
 
 
-# To-Do App – Conteinerización y Orquestación (Compose · Swarm · Kubernetes KIND)
+# To-Do App – Conteinerización y Orquestación (Compose · Swarm · Kubernetes KIND) - Práctica Nº1 – Arquitectura de Microservicios con Retry, Circuit Breaker y Load Balancer 
 
 **Alumno:** Elmer Alan Cornejo Quito  
 **Usuario Docker Hub:** [alancor](https://hub.docker.com/u/alancor)  
 **Repositorio:** [AlanCornejoQ/todo-app](https://github.com/AlanCornejoQ/todo-app)
 
 ---
+
+## Estructura del repositorio
+```bash
+./todo-app/
+├── api/
+├── compose.yml
+├── docker-compose.yml
+├── frontend
+│   ├── default.conf
+│   ├── Dockerfile
+│   └── index.html
+├── k8s/
+├── kind-config.yaml
+├── LICENSE
+├── load-balancer
+│   ├── Dockerfile
+│   └── nginx.conf
+├── README.md
+├── README.pdf
+├── services
+│   ├── tasks-service
+│   │   ├── app.py
+│   │   ├── Dockerfile
+│   │   └── requirements.txt
+│   └── users-service
+│       ├── app.py
+│       ├── Dockerfile
+│       └── requirements.txt
+└── stack-deploy.yml
+```
+## Ejecución del proyecto
+
+1. Clonar o descomprimir el repositorio.
+2. Construir y levantar todos los servicios:
+```bash
+docker compose up -d --build
+```
+3. Verificar estado:
+```bash
+docker compose ps
+```
+## Pruebas de funcionamiento
+### 1. Frontend y CRUD
+Abrir <http://localhost:5173>  
+- Crear una nueva tarea.  
+- Marcarla como completada.  
+- Usar **Actualizar** para refrescar la lista.  
+
+### 2. Retry y Circuit Breaker
+1. **Apagar una réplica** del servicio de tareas:
+   ```bash
+   docker compose stop tasks-a-1
+   ```
+   El sistema sigue funcionando gracias al Load Balancer.
+2. **Apagar ambas réplicas:**
+    ```bash
+    docker compose stop tasks-a-2
+    ```
+    El endpoint /me/tasks responde con fallback:
+    ```json
+    {"fallback":true,"tasks":[],"message":"tasks no disponible"}
+    ```
+3. **Volver a encenderlas:**
+    ```bash
+    docker compose start tasks-a-1 tasks-a-2
+    ```
+    se restablece automáticamente.
 
 ## 1 Descripción
 
