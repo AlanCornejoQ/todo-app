@@ -13,24 +13,32 @@
 
 ## Estructura del repositorio
 ```bash
-todo-app/
-├─ compose.yml
-├─ frontend/
-│ ├─ Dockerfile
-│ ├─ default.conf
-│ └─ index.html
-├─ load-balancer/
-│ ├─ Dockerfile
-│ └─ nginx.conf
-└─ services/
-├─ tasks-service/
-│ ├─ Dockerfile
-│ ├─ requirements.txt
-│ └─ app.py
-└─ users-service/
-├─ Dockerfile
-├─ requirements.txt
-└─ app.py
+./todo-app/
+├── api/
+├── compose.yml
+├── docker-compose.yml
+├── frontend
+│   ├── default.conf
+│   ├── Dockerfile
+│   └── index.html
+├── k8s/
+├── kind-config.yaml
+├── LICENSE
+├── load-balancer
+│   ├── Dockerfile
+│   └── nginx.conf
+├── README.md
+├── README.pdf
+├── services
+│   ├── tasks-service
+│   │   ├── app.py
+│   │   ├── Dockerfile
+│   │   └── requirements.txt
+│   └── users-service
+│       ├── app.py
+│       ├── Dockerfile
+│       └── requirements.txt
+└── stack-deploy.yml
 ```
 ## Ejecución del proyecto
 
