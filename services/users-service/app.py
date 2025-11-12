@@ -1,58 +1,72 @@
+import json
 import os
+import threading
+import time
 from flask import Flask, jsonify
-import requests
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-import pybreaker
-import psycopg
-
-EQUIPOS_BASE_URL = os.getenv("TASKS_BASE_URL", "http://lb-tasks")
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://users:users@db_users:5432/users_db")
-
-def init_db():
-    with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS users(
-                id SERIAL PRIMARY KEY,
-                email TEXT UNIQUE NOT NULL
-            );
-        """)
+from kafka import KafkaConsumer
 
 app = Flask(__name__)
-init_db()
 
-breaker = pybreaker.CircuitBreaker(
-    fail_max=5,               # volumen de llamadas antes de evaluar
-    reset_timeout=5,          # 5s medio-abierto
-    exclude=[requests.exceptions.HTTPError]  # 4xx no abren el circuito
-)
+KAFKA_BROKER = os.getenv("KAFKA_BROKER", "kafka:9092")
+TOPIC_TASKS = os.getenv("TOPIC_TASKS", "tasks")
+GROUP_ID = os.getenv("GROUP_ID", "users-consumer-group")
 
-@retry(
-    reraise=True,
-    stop=stop_after_attempt(3),                  # Retry 3 intentos
-    wait=wait_exponential(multiplier=0.3, min=0.5, max=2),
-    retry=retry_if_exception_type((requests.exceptions.RequestException,))
-)
-@breaker
-def get_tasks_via_lb():
-    r = requests.get(f"{EQUIPOS_BASE_URL}/tasks", timeout=2.0)
-    r.raise_for_status()
-    return r.json()
+# Estado "procesado" (demo): conteo de tareas por usuario
+USER_TASK_COUNTS = {}
+consumer_thread_started = False
+thread_lock = threading.Lock()
+
+def consumer_loop():
+    """Hilo consumidor de Kafka."""
+    app.logger.info("[KAFKA] Iniciando consumer...")
+    # autocommit simple para demo
+    consumer = KafkaConsumer(
+        TOPIC_TASKS,
+        bootstrap_servers=KAFKA_BROKER,
+        group_id=GROUP_ID,
+        value_deserializer=lambda m: json.loads(m.decode("utf-8")),
+        enable_auto_commit=True,
+        auto_offset_reset="earliest",
+        consumer_timeout_ms=1000,
+    )
+    while True:
+        try:
+            for msg in consumer:
+                evt = msg.value
+                evt_type = evt.get("type")
+                payload = evt.get("payload", {})
+                user_id = payload.get("user_id", None)
+
+                if evt_type == "task.created" and user_id is not None:
+                    USER_TASK_COUNTS[user_id] = USER_TASK_COUNTS.get(user_id, 0) + 1
+                    app.logger.info(f"[KAFKA] task.created user={user_id} total={USER_TASK_COUNTS[user_id]}")
+                elif evt_type == "task.completed":
+                    # aquí podrías actualizar otro estado/auditoría
+                    app.logger.info(f"[KAFKA] task.completed id={payload.get('id')}")
+        except Exception as e:
+            app.logger.error(f"[KAFKA] Error en consumer: {e}")
+            time.sleep(1.0)
+
+def ensure_consumer_started():
+    global consumer_thread_started
+    if not consumer_thread_started:
+        with thread_lock:
+            if not consumer_thread_started:
+                t = threading.Thread(target=consumer_loop, daemon=True)
+                t.start()
+                consumer_thread_started = True
 
 @app.get("/health")
 def health():
-    return jsonify(ok=True, service="users")
+    ensure_consumer_started()
+    return jsonify({"status": "ok", "service": "users-service"})
 
-@app.get("/me/tasks")
-def me_tasks():
-    try:
-        data = get_tasks_via_lb()
-        return jsonify({"source":"users","tasks":data})
-    except pybreaker.CircuitBreakerError:
-        # Fallback si el circuito está abierto
-        return jsonify({"fallback":True,"tasks":[],"message":"tasks no disponible"}), 503
-    except requests.exceptions.RequestException:
-        # Error de red luego de reintentos
-        return jsonify({"error":"upstream error"}), 502
+@app.get("/stats/users")
+def stats_users():
+    ensure_consumer_started()
+    return jsonify({"users_task_counts": USER_TASK_COUNTS})
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT","6000")))
+    port = int(os.getenv("FLASK_RUN_PORT", "6000"))
+    ensure_consumer_started()
+    app.run(host="0.0.0.0", port=port)

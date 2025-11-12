@@ -1,58 +1,186 @@
-version: "3.9"
+name: todo-app
+
 services:
-  frontend:
-    build: ./frontend
-    image: alan/todo-frontend:v1.0.0
-    depends_on: [api]
-    ports:
-      - "8080:80"
-    networks: [app-net]
-
-  api:
-    build: ./api
-    image: alan/todo-api:v1.0.0
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_HOST: db
-      POSTGRES_PORT: 5432
-      REDIS_HOST: ${REDIS_HOST}
-      REDIS_PORT: ${REDIS_PORT}
-    networks: [app-net]
-
-  db:
+  db_tasks:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: tasksdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U postgres -d tasksdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     volumes:
-      - dbdata:/var/lib/postgresql/data
-    networks: [app-net]
+      - db_tasks_data:/var/lib/postgresql/data
+    networks: [appnet]
 
-  redis:
-    image: redis:7-alpine
-    networks: [app-net]
-
-  adminer:
-    image: adminer:latest
-    depends_on: [db]
-    ports: ["8081:8080"]
-    networks: [app-net]
-
-  cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
-    ports: ["8082:8080"]
+  db_users:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: usersdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U postgres -d usersdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker/:/var/lib/docker:ro
-    networks: [app-net]
+      - db_users_data:/var/lib/postgresql/data
+    networks: [appnet]
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD-SHELL", "echo srvr | nc -w 2 localhost 2181 | grep 'Zookeeper version'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "2181:2181"
+      - "8080:8080"
+    volumes:
+      - zk_data:/var/lib/zookeeper
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_INTERNAL://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    healthcheck:
+      test: ["CMD","bash","-lc","kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    ports:
+      - "9092:9092"
+    networks: [appnet]
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash","-lc"]
+    command: >
+      "kafka-topics --create --if-not-exists --topic tasks.events --bootstrap-server kafka:29092 --replication-factor 1 --partitions 1 &&
+       kafka-topics --create --if-not-exists --topic users.events --bootstrap-server kafka:29092 --replication-factor 1 --partitions 1"
+    networks: [appnet]
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      DYNAMIC_CONFIG_ENABLED: "true"
+    ports:
+      - "8080:8080"
+    networks: [appnet]
+
+  users:
+    image: alancor/todo-users:1.0.0
+    depends_on:
+      db_users:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      USERS_DB_HOST: db_users
+      USERS_DB_NAME: usersdb
+      USERS_DB_USER: postgres
+      USERS_DB_PASS: postgres
+      KAFKA_BOOTSTRAP: kafka:29092
+      KAFKA_TOPIC: users.events
+    ports:
+      - "6000:6000"
+    networks: [appnet]
+
+  tasks-a-1:
+    image: alancor/todo-tasks:1.0.0
+    depends_on:
+      db_tasks:
+        condition: service_healthy
+      users:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+    environment:
+      TASKS_DB_HOST: db_tasks
+      TASKS_DB_NAME: tasksdb
+      TASKS_DB_USER: postgres
+      TASKS_DB_PASS: postgres
+      USERS_BASE_URL: http://users:6000
+      KAFKA_BOOTSTRAP: kafka:29092
+      KAFKA_TOPIC: tasks.events
+    networks: [appnet]
+
+  tasks-a-2:
+    image: alancor/todo-tasks:1.0.0
+    depends_on:
+      db_tasks:
+        condition: service_healthy
+      users:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+    environment:
+      TASKS_DB_HOST: db_tasks
+      TASKS_DB_NAME: tasksdb
+      TASKS_DB_USER: postgres
+      TASKS_DB_PASS: postgres
+      USERS_BASE_URL: http://users:6000
+      KAFKA_BOOTSTRAP: kafka:29092
+      KAFKA_TOPIC: tasks.events
+    networks: [appnet]
+
+  lb-tasks:
+    image: alancor/todo-lb:1.0.0
+    depends_on:
+      tasks-a-1:
+        condition: service_started
+      tasks-a-2:
+        condition: service_started
+    ports:
+      - "8081:80"
+    networks: [appnet]
+
+  frontend:
+    image: alancor/todo-frontend:1.0.0
+    depends_on:
+      lb-tasks:
+        condition: service_started
+      users:
+        condition: service_started
+    ports:
+      - "5173:80"
+    networks: [appnet]
 
 networks:
-  app-net:
+  appnet:
 
 volumes:
-  dbdata:
+  db_tasks_data:
+  db_users_data:
+  zk_data:
+  kafka_data:
