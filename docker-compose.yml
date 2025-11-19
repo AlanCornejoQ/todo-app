@@ -27,6 +27,7 @@ services:
       USERS_SERVICE_URL: http://users-service:8000
       KAFKA_BOOTSTRAP_SERVERS: kafka-broker:29092
       TASKS_TOPIC: tasks-events
+      USERS_SERVICE_API_KEY: supersecret-internal-key
     depends_on:
       - tasks-db
       - redis
@@ -51,6 +52,7 @@ services:
       USERS_SERVICE_URL: http://users-service:8000
       KAFKA_BOOTSTRAP_SERVERS: kafka-broker:29092
       TASKS_TOPIC: tasks-events
+      USERS_SERVICE_API_KEY: supersecret-internal-key
     depends_on:
       - tasks-db
       - redis
@@ -86,6 +88,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka-broker:29092
       TASKS_TOPIC: tasks-events
       KAFKA_GROUP_ID: users-service-group
+      INTERNAL_API_KEY: supersecret-internal-key
     depends_on:
       - users-db
       - kafka-broker

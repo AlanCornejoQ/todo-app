@@ -19,6 +19,14 @@ KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka-broker:29092")
 TASKS_TOPIC = os.getenv("TASKS_TOPIC", "tasks-events")
 KAFKA_GROUP_ID = os.getenv("KAFKA_GROUP_ID", "users-service-group")
 
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "changeme-internal-key")
+
+def require_internal_api_key(req):
+    api_key = req.headers.get("X-Internal-Api-Key")
+    if not api_key or api_key != INTERNAL_API_KEY:
+        return False
+    return True
+
 def get_conn():
     return psycopg2.connect(
         dbname=DB_NAME, user=DB_USER, password=DB_PASS, host=DB_HOST, port=DB_PORT
@@ -93,6 +101,10 @@ def create_user():
 
 @app.get("/api/users/<int:uid>")
 def get_user(uid):
+    # Autenticación servicio a servicio mediante API Key
+    if not require_internal_api_key(request):
+        return {"error": "unauthorized"}, 401
+
     ensure_users_table()
     with get_conn() as conn:
         with conn.cursor() as cur:

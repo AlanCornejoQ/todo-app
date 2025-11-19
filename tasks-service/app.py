@@ -22,6 +22,7 @@ REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 
 # ==== Config servicio de usuarios (B) ====
 USERS_SERVICE_URL = os.getenv("USERS_SERVICE_URL", "http://users-service:8000")
+USERS_SERVICE_API_KEY = os.getenv("USERS_SERVICE_API_KEY", "changeme-internal-key")
 
 # ==== Config Kafka (publicar eventos) ====
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka-broker:29092")
@@ -95,7 +96,12 @@ circuit_breaker = pybreaker.CircuitBreaker(
     wait=tenacity.wait_fixed(1)
 )
 def fetch_user(user_id: int):
-    resp = requests.get(f"{USERS_SERVICE_URL}/api/users/{user_id}", timeout=2)
+    headers = {"X-Internal-Api-Key": USERS_SERVICE_API_KEY}
+    resp = requests.get(
+        f"{USERS_SERVICE_URL}/api/users/{user_id}",
+        headers=headers,
+        timeout=2
+    )
     resp.raise_for_status()
     return resp.json()
 
