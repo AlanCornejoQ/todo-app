@@ -5,3 +5,4 @@ redis==5.0.8
 requests==2.32.3
 tenacity==8.5.0
 pybreaker==1.2.0
+kafka-python==2.0.2

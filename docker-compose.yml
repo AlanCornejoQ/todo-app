@@ -1,4 +1,3 @@
-
 services:
   # ---------- Frontend ----------
   frontend:
@@ -9,16 +8,14 @@ services:
     links:
       - tasks-lb
     ports:
-      - "8090:80"   # o el puerto que estés usando en el host
+      - "8090:80"
     networks:
       - app-net
-
-
 
   # ---------- Microservicio A: TASKS (2 réplicas) ----------
   tasks-a-1:
     build: ./tasks-service
-    image: alan/todo-tasks:v2.0.0
+    image: alan/todo-tasks:v2.1.0
     environment:
       POSTGRES_DB: tasksdb
       POSTGRES_USER: tasks_user
@@ -28,16 +25,21 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       USERS_SERVICE_URL: http://users-service:8000
+      KAFKA_BOOTSTRAP_SERVERS: kafka-broker:29092
+      TASKS_TOPIC: tasks-events
     depends_on:
       - tasks-db
       - redis
       - users-service
+      - kafka-broker
+      - init-kafka
     networks:
       - app-net
 
+
   tasks-a-2:
     build: ./tasks-service
-    image: alan/todo-tasks:v2.0.0
+    image: alan/todo-tasks:v2.1.0
     environment:
       POSTGRES_DB: tasksdb
       POSTGRES_USER: tasks_user
@@ -47,12 +49,17 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       USERS_SERVICE_URL: http://users-service:8000
+      KAFKA_BOOTSTRAP_SERVERS: kafka-broker:29092
+      TASKS_TOPIC: tasks-events
     depends_on:
       - tasks-db
       - redis
       - users-service
+      - kafka-broker
+      - init-kafka
     networks:
       - app-net
+
 
   # ---------- Load Balancer frente a las réplicas de TASKS ----------
   tasks-lb:
@@ -62,24 +69,29 @@ services:
       - tasks-a-1
       - tasks-a-2
     ports:
-      - "6000:8000"   # para pruebas desde host, el frontend usa el puerto interno
+      - "6000:8000"
     networks:
       - app-net
 
   # ---------- Microservicio B: USERS ----------
   users-service:
     build: ./users-service
-    image: alan/todo-users:v1.0.0
+    image: alan/todo-users:v1.1.0
     environment:
       POSTGRES_DB: usersdb
       POSTGRES_USER: users_user
       POSTGRES_PASSWORD: users_secret
       POSTGRES_HOST: users-db
       POSTGRES_PORT: 5432
+      KAFKA_BOOTSTRAP_SERVERS: kafka-broker:29092
+      TASKS_TOPIC: tasks-events
+      KAFKA_GROUP_ID: users-service-group
     depends_on:
       - users-db
+      - kafka-broker
+      - init-kafka
     ports:
-      - "7000:8000"   # 👈 agregá esto
+      - "7000:8000"
     networks:
       - app-net
 
@@ -113,6 +125,58 @@ services:
     networks:
       - app-net
 
+  # ---------- Kafka Cluster ----------
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.9.4
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - app-net
+
+  kafka-broker:
+    depends_on:
+      - zookeeper
+    image: confluentinc/cp-kafka:7.9.4
+    container_name: kafka-broker
+    ports:
+      - "9092:9092"   # opcional, para debug desde el host
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka-broker:29092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_INTERNAL://0.0.0.0:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    networks:
+      - app-net
+
+  init-kafka:
+    image: confluentinc/cp-kafka:7.9.4
+    container_name: init-kafka
+    depends_on:
+      - kafka-broker
+    entrypoint: ["/bin/sh","-c"]
+    command: |
+      echo "Esperando a Kafka..."
+      sleep 15
+      echo "Creando topic tasks-events..."
+      kafka-topics --bootstrap-server kafka-broker:29092 \
+          --create --if-not-exists \
+          --topic tasks-events \
+          --replication-factor 1 \
+          --partitions 3
+      echo "Listado de topics:"
+      kafka-topics --bootstrap-server kafka-broker:29092 --list
+      tail -f /dev/null
+    networks:
+      - app-net
+
+
+
   # ---------- Herramientas opcionales ----------
   adminer:
     image: adminer:latest
@@ -122,7 +186,6 @@ services:
       - "8083:8080"
     networks:
       - app-net
-
 
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.49.1
