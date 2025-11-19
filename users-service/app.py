@@ -101,7 +101,7 @@ def create_user():
 
 @app.get("/api/users/<int:uid>")
 def get_user(uid):
-    # Autenticación servicio a servicio mediante API Key
+    # Autenticacion servicio a servicio mediante API Key
     if not require_internal_api_key(request):
         return {"error": "unauthorized"}, 401
 
@@ -196,7 +196,7 @@ def start_kafka_consumer_thread():
     t.start()
     print("[users-service] hilo KafkaConsumer iniciado", flush=True)
 
-# Iniciar el consumer cuando se carga la app (por proceso de gunicorn)
+
 start_kafka_consumer_thread()
 
 if __name__ == "__main__":
