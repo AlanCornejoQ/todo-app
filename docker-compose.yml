@@ -1,58 +1,144 @@
-version: "3.9"
+
 services:
+  # ---------- Frontend ----------
   frontend:
     build: ./frontend
-    image: alan/todo-frontend:v1.0.0
-    depends_on: [api]
+    image: alan/todo-frontend:v2.0.0
+    depends_on:
+      - tasks-lb
+    links:
+      - tasks-lb
     ports:
-      - "8080:80"
-    networks: [app-net]
+      - "8090:80"   # o el puerto que estés usando en el host
+    networks:
+      - app-net
 
-  api:
-    build: ./api
-    image: alan/todo-api:v1.0.0
+
+
+  # ---------- Microservicio A: TASKS (2 réplicas) ----------
+  tasks-a-1:
+    build: ./tasks-service
+    image: alan/todo-tasks:v2.0.0
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_HOST: db
+      POSTGRES_DB: tasksdb
+      POSTGRES_USER: tasks_user
+      POSTGRES_PASSWORD: tasks_secret
+      POSTGRES_HOST: tasks-db
       POSTGRES_PORT: 5432
-      REDIS_HOST: ${REDIS_HOST}
-      REDIS_PORT: ${REDIS_PORT}
-    networks: [app-net]
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      USERS_SERVICE_URL: http://users-service:8000
+    depends_on:
+      - tasks-db
+      - redis
+      - users-service
+    networks:
+      - app-net
 
-  db:
+  tasks-a-2:
+    build: ./tasks-service
+    image: alan/todo-tasks:v2.0.0
+    environment:
+      POSTGRES_DB: tasksdb
+      POSTGRES_USER: tasks_user
+      POSTGRES_PASSWORD: tasks_secret
+      POSTGRES_HOST: tasks-db
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      USERS_SERVICE_URL: http://users-service:8000
+    depends_on:
+      - tasks-db
+      - redis
+      - users-service
+    networks:
+      - app-net
+
+  # ---------- Load Balancer frente a las réplicas de TASKS ----------
+  tasks-lb:
+    build: ./tasks-lb
+    image: alan/todo-tasks-lb:v1.0.0
+    depends_on:
+      - tasks-a-1
+      - tasks-a-2
+    ports:
+      - "6000:8000"   # para pruebas desde host, el frontend usa el puerto interno
+    networks:
+      - app-net
+
+  # ---------- Microservicio B: USERS ----------
+  users-service:
+    build: ./users-service
+    image: alan/todo-users:v1.0.0
+    environment:
+      POSTGRES_DB: usersdb
+      POSTGRES_USER: users_user
+      POSTGRES_PASSWORD: users_secret
+      POSTGRES_HOST: users-db
+      POSTGRES_PORT: 5432
+    depends_on:
+      - users-db
+    ports:
+      - "7000:8000"   # 👈 agregá esto
+    networks:
+      - app-net
+
+
+  # ---------- Bases de datos independientes ----------
+  tasks-db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: tasksdb
+      POSTGRES_USER: tasks_user
+      POSTGRES_PASSWORD: tasks_secret
     volumes:
-      - dbdata:/var/lib/postgresql/data
-    networks: [app-net]
+      - tasks-dbdata:/var/lib/postgresql/data
+    networks:
+      - app-net
 
+  users-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: usersdb
+      POSTGRES_USER: users_user
+      POSTGRES_PASSWORD: users_secret
+    volumes:
+      - users-dbdata:/var/lib/postgresql/data
+    networks:
+      - app-net
+
+  # ---------- Redis (usado solo por tasks-service) ----------
   redis:
     image: redis:7-alpine
-    networks: [app-net]
+    networks:
+      - app-net
 
+  # ---------- Herramientas opcionales ----------
   adminer:
     image: adminer:latest
-    depends_on: [db]
-    ports: ["8081:8080"]
-    networks: [app-net]
+    depends_on:
+      - tasks-db
+    ports:
+      - "8083:8080"
+    networks:
+      - app-net
+
 
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.49.1
-    ports: ["8082:8080"]
+    ports:
+      - "8082:8080"
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
-    networks: [app-net]
+    networks:
+      - app-net
 
 networks:
   app-net:
 
 volumes:
-  dbdata:
+  tasks-dbdata:
+  users-dbdata:
